@@ -18,6 +18,8 @@ package org.gradle.testing.junitplatform
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
+import org.gradle.integtests.fixtures.HtmlTestExecutionResult
+import org.gradle.integtests.fixtures.JUnitXmlTestExecutionResult
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.UsesSample
 import org.gradle.util.Requires
@@ -38,12 +40,19 @@ class JUnitPlatformSampleIntegrationTest extends AbstractIntegrationSpec {
         succeeds 'test'
 
         then:
-        new DefaultTestExecutionResult(sample.dir).testClass('org.gradle.junitplatform.JupiterTest').assertTestCount(5, 0, 0)
-            .assertTestPassed('ok()')
+        new HtmlTestExecutionResult(sample.dir).testClass('org.gradle.junitplatform.JupiterTest').assertTestCount(5, 0, 0)
+            .assertTestPassed('ok')
             .assertTestPassed('repetition 1 of 2')
             .assertTestPassed('repetition 2 of 2')
             .assertTestPassed('TEST 1')
-            .assertTestsSkipped('disabled()')
+            .assertTestsSkipped('disabled')
+
+        new JUnitXmlTestExecutionResult(sample.dir).testClass('org.gradle.junitplatform.JupiterTest').assertTestCount(5, 0, 0)
+            .assertTestPassed('ok')
+            .assertTestPassed('repeated()[1]')
+            .assertTestPassed('repeated()[2]')
+            .assertTestPassed('test1(TestInfo)')
+            .assertTestsSkipped('disabled')
     }
 
     @UsesSample('testing/junitplatform/engine')

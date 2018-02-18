@@ -17,8 +17,11 @@
 package org.gradle.testing.junitplatform
 
 import org.gradle.integtests.fixtures.DefaultTestExecutionResult
+import org.gradle.integtests.fixtures.HtmlTestExecutionResult
+import org.gradle.integtests.fixtures.JUnitXmlTestExecutionResult
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
+import spock.lang.Issue
 import spock.lang.Unroll
 
 import static org.gradle.testing.fixture.JUnitCoverage.LATEST_JUPITER_VERSION
@@ -197,9 +200,10 @@ class JUnitPlatformIntegrationTest extends JUnitPlatformIntegrationSpec {
         fails('test')
 
         then:
-        def result = new DefaultTestExecutionResult(testDirectory)
-        result.assertTestClassesExecuted('org.gradle.RepeatTest')
-        result.testClass('org.gradle.RepeatTest').assertTestCount(9, 1, 0)
+        new HtmlTestExecutionResult(testDirectory)
+            .assertTestClassesExecuted('org.gradle.RepeatTest')
+            .testClass('org.gradle.RepeatTest')
+            .assertTestCount(9, 1, 0)
             .assertTestPassed('ok 1/3')
             .assertTestPassed('ok 2/3')
             .assertTestPassed('ok 3/3')
@@ -209,6 +213,20 @@ class JUnitPlatformIntegrationTest extends JUnitPlatformIntegrationSpec {
             .assertTestPassed('partialSkip 1/3')
             .assertTestsSkipped('partialSkip 2/3')
             .assertTestPassed('partialSkip 3/3')
+
+        new JUnitXmlTestExecutionResult(testDirectory)
+            .assertTestClassesExecuted('org.gradle.RepeatTest')
+            .testClass('org.gradle.RepeatTest')
+            .assertTestCount(9, 1, 0)
+            .assertTestPassed('ok()[1]')
+            .assertTestPassed('ok()[2]')
+            .assertTestPassed('ok()[3]')
+            .assertTestPassed('partialFail(RepetitionInfo)[1]')
+            .assertTestFailed('partialFail(RepetitionInfo)[2]', containsString('java.lang.RuntimeException'))
+            .assertTestPassed('partialFail(RepetitionInfo)[3]')
+            .assertTestPassed('partialSkip(RepetitionInfo)[1]')
+            .assertTestsSkipped('partialSkip(RepetitionInfo)[2]')
+            .assertTestPassed('partialSkip(RepetitionInfo)[3]')
     }
 
     def 'can filter nested tests'() {
@@ -250,5 +268,56 @@ test {
         result.assertTestClassesExecuted('org.gradle.NestedTest$Inner')
         result.testClass('org.gradle.NestedTest$Inner').assertTestCount(1, 0, 0)
             .assertTestPassed('innerTest')
+    }
+
+    @Issue('https://github.com/junit-team/junit5/issues/1182')
+    def 'xml report should use legacy format'() {
+        given:
+        buildFile << '''
+test {
+    reports.junitXml.enabled = true
+}
+'''
+        file('src/test/java/DynamicReportTest.java') << '''
+import org.junit.jupiter.api.*;
+import java.util.stream.Stream;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.DynamicContainer.dynamicContainer;
+import static org.junit.jupiter.api.DynamicTest.dynamicTest;
+
+class DynamicReportTest {
+    @TestFactory
+    Stream<DynamicNode> dynamicTestsWithContainers() {
+        return Stream.of("A", "B", "C")
+            .map(input -> dynamicContainer("Container " + input, Stream.of(
+                dynamicTest("not null", () -> assertNotNull(input)),
+                dynamicContainer("properties", Stream.of(
+                    dynamicTest("length > 0", () -> assertTrue(input.length() > 0)),
+                    dynamicTest("not empty", () -> assertFalse(input.isEmpty()))
+                ))
+            )));
+    }
+}
+'''
+        when:
+        succeeds('test')
+
+        then:
+        def xmlReport = new JUnitXmlTestExecutionResult(testDirectory)
+        [
+            'dynamicTestsWithContainers()[1][1]',
+            'dynamicTestsWithContainers()[1][2][1]',
+            'dynamicTestsWithContainers()[1][2][2]',
+            'dynamicTestsWithContainers()[2][1]',
+            'dynamicTestsWithContainers()[2][2][1]',
+            'dynamicTestsWithContainers()[2][2][2]',
+            'dynamicTestsWithContainers()[3][1]',
+            'dynamicTestsWithContainers()[3][2][1]',
+            'dynamicTestsWithContainers()[3][2][2]',
+        ].every { xmlReport.testClass("DynamicReportTest").assertTestPassed(it) }
+
+        new HtmlTestExecutionResult(testDirectory)
+            .testClass('DynamicReportTest').assertTestCount(9, 0, 0)
+            .assertTestPassed('length > 0').assertTestPassed('not empty').assertTestPassed('not null')
     }
 }
