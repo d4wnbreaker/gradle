@@ -1228,6 +1228,7 @@ configurations.all {
         expectGetDynamicRevision(httpModule)
 
         then:
+        args '--refresh-dependencies'
         checkResolve "group:projectA:1.+": "group:projectA:1.3"
 
         where:
